@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>CIVICA – Secure Login</title>
+
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&display=swap" rel="stylesheet">
+
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+
+body{
+    font-family:'Poppins',sans-serif;
+    background:#f6f7fb;
+    min-height:100vh;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+}
+
+.container{
+    background:#ffffff;
+    width:100%;
+    max-width:420px;
+    padding:32px;
+    border-radius:18px;
+    box-shadow:0 20px 40px rgba(0,0,0,0.08);
+}
+
+h1{
+    text-align:center;
+    color:#ff7a00;
+    margin-bottom:24px;
+    font-weight:700;
+}
+
+.tabs{
+    display:flex;
+    gap:10px;
+    margin-bottom:20px;
+}
+
+.tab-btn{
+    flex:1;
+    border:none;
+    padding:10px;
+    border-radius:10px;
+    background:#f1f1f1;
+    cursor:pointer;
+    font-weight:600;
+    color:#555;
+}
+
+.tab-btn.active{
+    background:#ff7a00;
+    color:white;
+}
+
+.form{
+    display:none;
+    flex-direction:column;
+    gap:14px;
+}
+
+.form.active{display:flex}
+
+input{
+    padding:12px 14px;
+    border-radius:10px;
+    border:1.5px solid #ddd;
+    font-size:0.95rem;
+}
+
+input:focus{
+    outline:none;
+    border-color:#ff7a00;
+}
+
+button{
+    padding:12px;
+    border-radius:12px;
+    border:none;
+    cursor:pointer;
+    font-weight:600;
+    font-size:0.95rem;
+}
+
+.primary{
+    background:#ff7a00;
+    color:white;
+}
+
+.primary:hover{background:#e56b00}
+
+.secondary{
+    background:white;
+    border:1.5px solid #ddd;
+}
+
+.secondary:hover{
+    border-color:#ff7a00;
+    color:#ff7a00;
+}
+
+.phone-box{
+    display:flex;
+    gap:10px;
+}
+
+.error{
+    color:#e63946;
+    text-align:center;
+    font-size:0.9rem;
+    display:none;
+}
+</style>
+</head>
+
+<body>
+
+<div class="container">
+<h1>CIVICA</h1>
+
+<div class="tabs">
+    <button class="tab-btn active" data-tab="login">Login</button>
+    <button class="tab-btn" data-tab="register">Register</button>
+</div>
+
+<div id="error" class="error"></div>
+
+<!-- LOGIN -->
+<div id="login" class="form active">
+    <input id="login-email" type="email" placeholder="Email">
+    <input id="login-password" type="password" placeholder="Password">
+    <button class="primary" id="login-btn">Login</button>
+
+    <button class="secondary" id="google-login">Continue with Google</button>
+
+    <div class="phone-box">
+        <input id="phone" placeholder="+91XXXXXXXXXX">
+        <button class="secondary" id="send-otp">OTP</button>
+    </div>
+    <input id="otp" placeholder="Enter OTP">
+    <button class="primary" id="verify-otp">Verify OTP</button>
+</div>
+
+<!-- REGISTER -->
+<div id="register" class="form">
+    <input id="reg-name" placeholder="Full Name">
+    <input id="reg-email" placeholder="Email">
+    <input id="reg-pass" type="password" placeholder="Password">
+    <button class="primary" id="register-btn">Create Account</button>
+</div>
+
+<div id="recaptcha-container"></div>
+</div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/9.6.0/firebase-app.js";
+import {
+getAuth,
+signInWithEmailAndPassword,
+createUserWithEmailAndPassword,
+GoogleAuthProvider,
+signInWithPopup,
+RecaptchaVerifier,
+signInWithPhoneNumber
+} from "https://www.gstatic.com/firebasejs/9.6.0/firebase-auth.js";
+
+const firebaseConfig = {
+    apiKey: "AIzaSyBIvrzeysE2O1yVtCaTij6Q5IvYriTAdr8",
+    authDomain: "civicaai-56185.firebaseapp.com",
+    projectId: "civicaai-56185"
+};
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const provider = new GoogleAuthProvider();
+
+const errorBox = document.getElementById("error");
+const showError = msg=>{
+    errorBox.textContent=msg;
+    errorBox.style.display=msg?"block":"none";
+};
+
+const redirectHome = ()=>window.location.href="/home/";
+
+document.querySelectorAll(".tab-btn").forEach(btn=>{
+    btn.onclick=()=>{
+        document.querySelectorAll(".tab-btn").forEach(b=>b.classList.remove("active"));
+        document.querySelectorAll(".form").forEach(f=>f.classList.remove("active"));
+        btn.classList.add("active");
+        document.getElementById(btn.dataset.tab).classList.add("active");
+        showError("");
+    };
+});
+
+// Email login
+document.getElementById("login-btn").onclick=async()=>{
+    try{
+        await signInWithEmailAndPassword(auth,
+            document.getElementById("login-email").value, document.getElementById("login-password").value);
+        redirectHome();
+    }catch(e){showError(e.message)}
+};
+
+// Register
+document.getElementById("register-btn").onclick=async()=>{
+    try{
+        await createUserWithEmailAndPassword(auth,
+            document.getElementById("reg-email").value, document.getElementById("reg-pass").value);
+        redirectHome();
+    }catch(e){showError(e.message)}
+};
+
+// Google Auth
+document.getElementById("google-login").onclick=async()=>{
+    try{
+        await signInWithPopup(auth, provider);
+        redirectHome();
+    }catch(e){showError(e.message)}
+};
+
+// Phone Auth
+window.recaptchaVerifier = new RecaptchaVerifier(
+"recaptcha-container",{size:"invisible"},auth);
+
+document.getElementById("send-otp").onclick=async()=>{
+    try{
+        window.confirmationResult =
+        await signInWithPhoneNumber(auth, document.getElementById("phone").value, window.recaptchaVerifier);
+        alert("OTP Sent");
+    }catch(e){showError(e.message)}
+};
+
+document.getElementById("verify-otp").onclick=async()=>{
+    try{
+        await window.confirmationResult.confirm(document.getElementById("otp").value);
+        redirectHome();
+    }catch(e){showError("Invalid OTP")}
+};
+</script>
+
+</body>
+</html>

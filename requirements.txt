@@ -1,0 +1,6 @@
+Flask==3.0.0
+google-genai
+pypdf
+python-dotenv                                                                                                                                                                                                                                                     
+pillow                                                                                                                                                                                                                                              
+google-genai

@@ -1,8 +1,6 @@
-Flask==3.0.0
 fastapi==0.117.1
 uvicorn[standard]==0.36.0
 python-multipart==0.0.20
-google-genai
 pypdf
 python-dotenv
 pillow

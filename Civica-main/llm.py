@@ -11,6 +11,11 @@ from config import settings
 
 T = TypeVar("T")
 
+_GOOGLE_LEGACY_MODEL_MAP = {
+    "gemini-2.5-flash": "gemini-3.6-flash",
+    "models/gemini-2.5-flash": "gemini-3.6-flash",
+}
+
 
 def _google_client():
     from google import genai
@@ -28,14 +33,23 @@ def _openai_client():
     return OpenAI(api_key=settings.openai_api_key)
 
 
+def _normalize_model(provider: str, model: str) -> str:
+    if provider == "google":
+        return _GOOGLE_LEGACY_MODEL_MAP.get(model.strip(), model.strip())
+    return model.strip()
+
+
 def _model_config(task: str) -> tuple[str, str]:
     if task == "multimodal":
-        return settings.multimodal_provider, settings.multimodal_model
-    if task == "chat":
-        return settings.chat_provider, settings.chat_model
-    if task == "reasoning":
-        return "openai", settings.openai_reasoning_model
-    return settings.text_provider, settings.text_model
+        provider, model = settings.multimodal_provider, settings.multimodal_model
+    elif task == "chat":
+        provider, model = settings.chat_provider, settings.chat_model
+    elif task == "reasoning":
+        provider, model = "openai", settings.openai_reasoning_model
+    else:
+        provider, model = settings.text_provider, settings.text_model
+
+    return provider, _normalize_model(provider, model)
 
 
 def generate_structured(
@@ -66,7 +80,6 @@ def generate_structured(
             model=model,
             contents=contents,
             config=types.GenerateContentConfig(
-                temperature=temperature,
                 response_mime_type="application/json",
                 response_schema=schema,
             ),

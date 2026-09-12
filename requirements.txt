@@ -6,7 +6,7 @@ python-dotenv
 pillow
 requests==2.32.5
 beautifulsoup4==4.13.5
-pydantic==2.11.9
+pydantic==2.12.5
 langchain==1.0.8
 langchain-core==1.6.2
 langchain-google-genai==4.4.0

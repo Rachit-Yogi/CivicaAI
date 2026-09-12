@@ -1,7 +1,8 @@
-"""Resilient Google/OpenAI SDK adapters used by Civica's LangGraph workflows."""
+"""Resilient Google/OpenAI/Mistral SDK adapters used by Civica's LangGraph workflows."""
 from __future__ import annotations
 
 import hashlib
+import json
 import random
 import threading
 import time
@@ -41,8 +42,6 @@ def _google_client():
     if not settings.google_api_key:
         raise RuntimeError("GOOGLE_API_KEY is required for the configured Google model.")
 
-    # Application code owns retries, so the SDK performs one HTTP attempt per
-    # application attempt. This avoids multiplying retry traffic against quota.
     retry_options = types.HttpRetryOptions(
         attempts=1,
         initial_delay=1.0,
@@ -68,10 +67,20 @@ def _openai_client():
     return OpenAI(api_key=settings.openai_api_key, timeout=settings.request_timeout_seconds)
 
 
+def _mistral_client():
+    from mistralai.client import Mistral
+
+    if not settings.mistral_api_key:
+        raise RuntimeError("MISTRAL_API_KEY is required for the configured Mistral model.")
+    return Mistral(api_key=settings.mistral_api_key)
+
+
 def _normalize_model(provider: str, model: str) -> str:
+    provider = provider.lower()
+    model = model.strip()
     if provider == "google":
-        return _GOOGLE_LEGACY_MODEL_MAP.get(model.strip(), model.strip())
-    return model.strip()
+        return _GOOGLE_LEGACY_MODEL_MAP.get(model, model)
+    return model
 
 
 def _model_config(task: str) -> tuple[str, str]:
@@ -83,14 +92,20 @@ def _model_config(task: str) -> tuple[str, str]:
         provider, model = "openai", settings.openai_reasoning_model
     else:
         provider, model = settings.text_provider, settings.text_model
+
+    provider = provider.lower()
+    if provider == "mistral" and model.startswith("gemini-"):
+        model = settings.mistral_model
     return provider, _normalize_model(provider, model)
 
 
 def _fallback_config(task: str, primary_provider: str, primary_model: str, grounded: bool) -> tuple[str, str] | None:
     # Grounded scheme/fraud research must not silently lose live evidence.
-    # Multimodal fallback is disabled because the current OpenAI path is text-only.
+    # Multimodal fallback is disabled because the current Mistral/OpenAI fallbacks
+    # in this service are text-only.
     if grounded or task == "multimodal":
         return None
+
     provider = (settings.fallback_provider or "").strip().lower()
     model = (settings.fallback_model or "").strip()
     if not provider or not model or provider == primary_provider:
@@ -99,6 +114,10 @@ def _fallback_config(task: str, primary_provider: str, primary_model: str, groun
         return None
     if provider == "openai" and not settings.openai_api_key:
         return None
+    if provider == "mistral" and not settings.mistral_api_key:
+        return None
+    if provider == "mistral" and model.startswith("gemini-"):
+        model = settings.mistral_model
     return provider, _normalize_model(provider, model)
 
 
@@ -120,7 +139,6 @@ def _slot_for(provider: str) -> threading.BoundedSemaphore:
 
 
 def _acquire_request_slot(provider: str) -> threading.BoundedSemaphore:
-    """Apply a sliding-window RPM limit before hitting the provider."""
     semaphore = _slot_for(provider)
     semaphore.acquire()
     try:
@@ -148,15 +166,9 @@ def _release_request_slot(semaphore: threading.BoundedSemaphore) -> None:
 
 def _cache_key(*, task: str, provider: str, model: str, prompt: str, grounded: bool, image_bytes: bytes | None) -> str:
     payload = bytearray()
-    payload.extend(task.encode())
-    payload.extend(b"\0")
-    payload.extend(provider.encode())
-    payload.extend(b"\0")
-    payload.extend(model.encode())
-    payload.extend(b"\0")
-    payload.extend(prompt.encode())
-    payload.extend(b"\0")
-    payload.extend(str(grounded).encode())
+    for value in (task, provider, model, prompt, str(grounded)):
+        payload.extend(value.encode())
+        payload.extend(b"\0")
     if image_bytes:
         payload.extend(hashlib.sha256(image_bytes).digest())
     return hashlib.sha256(payload).hexdigest()
@@ -191,12 +203,32 @@ def _error_text(exc: Exception) -> str:
     return str(getattr(exc, "message", None) or str(exc)).lower()
 
 
+def _error_code(exc: Exception):
+    for name in ("code", "status_code", "status"):
+        value = getattr(exc, name, None)
+        if isinstance(value, int):
+            return value
+        if isinstance(value, str) and value.isdigit():
+            return int(value)
+    return None
+
+
 def _is_retryable(exc: Exception) -> bool:
-    code = getattr(exc, "code", None)
+    code = _error_code(exc)
     text = _error_text(exc)
-    return code in {408, 429, 500, 502, 503, 504} or any(
+    return code in {408, 409, 429, 500, 502, 503, 504} or any(
         marker in text
-        for marker in ("429", "resource_exhausted", "rate limit", "too many requests", "unavailable", "timeout")
+        for marker in (
+            "429",
+            "resource_exhausted",
+            "rate limit",
+            "too many requests",
+            "temporarily unavailable",
+            "service unavailable",
+            "gateway timeout",
+            "timeout",
+            "connection reset",
+        )
     )
 
 
@@ -210,6 +242,7 @@ def _is_daily_quota(exc: Exception) -> bool:
             "quota has been exhausted",
             "exceeded your current quota",
             "quota will reset",
+            "insufficient quota",
         )
     )
 
@@ -225,7 +258,7 @@ def _check_circuit(provider: str, model: str) -> None:
         until = _circuit_open_until.get(key, 0.0)
         if until > now:
             raise LLMQuotaError(
-                "The AI service quota is temporarily exhausted. Please try again later or switch to a configured fallback provider."
+                "The AI service is temporarily unavailable. Please try again later or use the configured fallback provider."
             )
         if until:
             _circuit_open_until.pop(key, None)
@@ -241,14 +274,13 @@ def _open_circuit(provider: str, model: str) -> None:
 def _backoff(attempt: int) -> None:
     base = min(
         settings.llm_backoff_max_seconds,
-        settings.llm_backoff_initial_seconds * (2 ** attempt),
+        settings.llm_backoff_initial_seconds * (2**attempt),
     )
     jitter = random.uniform(0, min(1.0, base * 0.25))
     time.sleep(max(0.05, base + jitter))
 
 
 def _provider_call(provider: str, model: str, operation):
-    """Run a provider call with burst protection and bounded retry/backoff."""
     _check_circuit(provider, model)
     semaphore = _acquire_request_slot(provider)
     try:
@@ -257,24 +289,72 @@ def _provider_call(provider: str, model: str, operation):
         for attempt in range(attempts):
             try:
                 return operation()
-            except Exception as exc:  # SDK/provider-specific exception types vary by version.
+            except Exception as exc:
                 last_exc = exc
                 if _is_daily_quota(exc):
                     _open_circuit(provider, model)
                     raise LLMQuotaError(
-                        "The configured AI provider has exhausted its quota. Please check billing/quota or use a configured fallback provider."
+                        "The configured AI provider has exhausted its quota. Please use the configured fallback provider or check provider billing/quota."
                     ) from exc
                 if not _is_retryable(exc) or attempt >= attempts - 1:
                     break
                 _backoff(attempt)
         assert last_exc is not None
-        if getattr(last_exc, "code", None) == 429 or "429" in _error_text(last_exc):
-            raise LLMRateLimitError(
-                "The AI provider is rate-limited right now. Please retry shortly."
-            ) from last_exc
+        if _error_code(last_exc) == 429 or "429" in _error_text(last_exc):
+            raise LLMRateLimitError("The AI provider is rate-limited right now. Please retry shortly.") from last_exc
         raise last_exc
     finally:
         _release_request_slot(semaphore)
+
+
+def _mistral_content(response) -> str:
+    content = response.choices[0].message.content if response.choices else ""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "".join(
+            part.get("text", "") if isinstance(part, dict) else str(getattr(part, "text", ""))
+            for part in content
+        )
+    return str(content or "")
+
+
+def _mistral_text(*, model: str, prompt: str, temperature: float) -> str:
+    with _mistral_client() as client:
+        response = _provider_call(
+            "mistral",
+            model,
+            lambda: client.chat.complete(
+                model=model,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=temperature,
+            ),
+        )
+    return _mistral_content(response)
+
+
+def _mistral_structured(*, model: str, prompt: str, schema: type[T], temperature: float) -> T:
+    with _mistral_client() as client:
+        def call():
+            response = client.chat.parse(
+                model=model,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "Return only a JSON object matching the requested response schema.",
+                    },
+                    {"role": "user", "content": prompt},
+                ],
+                response_format=schema,
+                temperature=temperature,
+            )
+            parsed = getattr(response.choices[0].message, "parsed", None) if response.choices else None
+            if parsed is not None:
+                return parsed
+            raw = _mistral_content(response)
+            return schema.model_validate_json(raw)
+
+        return _provider_call("mistral", model, call)
 
 
 def _google_structured(*, model: str, schema: type[T], contents: list[object], temperature: float, grounded: bool) -> T:
@@ -291,6 +371,30 @@ def _google_structured(*, model: str, schema: type[T], contents: list[object], t
             ),
         )
     return schema.model_validate_json(response.text)
+
+
+def _openai_structured(*, model: str, prompt: str, schema: type[T]) -> T:
+    client = _openai_client()
+    try:
+        response = _provider_call(
+            "openai",
+            model,
+            lambda: client.responses.parse(model=model, input=prompt, text_format=schema),
+        )
+    finally:
+        client.close()
+    if response.output_parsed is None:
+        raise RuntimeError("OpenAI returned no structured output.")
+    return response.output_parsed
+
+
+def _openai_text(*, model: str, prompt: str) -> str:
+    client = _openai_client()
+    try:
+        response = _provider_call("openai", model, lambda: client.responses.create(model=model, input=prompt))
+    finally:
+        client.close()
+    return response.output_text or ""
 
 
 def generate_structured(*, task: str, prompt: str, schema: type[T], image_bytes: bytes | None = None,
@@ -311,26 +415,15 @@ def generate_structured(*, task: str, prompt: str, schema: type[T], image_bytes:
 
     try:
         if provider == "google":
-            result = _google_structured(
-                model=model,
-                schema=schema,
-                contents=contents,
-                temperature=temperature,
-                grounded=grounded,
-            )
+            result = _google_structured(model=model, schema=schema, contents=contents, temperature=temperature, grounded=grounded)
         elif provider == "openai":
-            client = _openai_client()
-            try:
-                response = _provider_call(
-                    "openai",
-                    model,
-                    lambda: client.responses.parse(model=model, input=prompt, text_format=schema),
-                )
-            finally:
-                client.close()
-            if response.output_parsed is None:
-                raise RuntimeError("OpenAI returned no structured output.")
-            result = response.output_parsed
+            if image_bytes:
+                raise ValueError("OpenAI structured multimodal requests are not supported by this workflow.")
+            result = _openai_structured(model=model, prompt=prompt, schema=schema)
+        elif provider == "mistral":
+            if image_bytes:
+                raise ValueError("Mistral structured multimodal requests are not enabled by this workflow.")
+            result = _mistral_structured(model=model, prompt=prompt, schema=schema, temperature=temperature)
         else:
             raise ValueError(f"Unsupported LLM provider: {provider}")
     except (LLMRateLimitError, LLMQuotaError) as primary_error:
@@ -338,46 +431,15 @@ def generate_structured(*, task: str, prompt: str, schema: type[T], image_bytes:
         if not fallback:
             raise primary_error
         fallback_provider, fallback_model = fallback
-        if fallback_provider == "openai":
-            client = _openai_client()
-            try:
-                response = _provider_call(
-                    "openai",
-                    fallback_model,
-                    lambda: client.responses.parse(model=fallback_model, input=prompt, text_format=schema),
-                )
-            finally:
-                client.close()
-            if response.output_parsed is None:
-                raise primary_error
-            result = response.output_parsed
+        if fallback_provider == "mistral":
+            result = _mistral_structured(model=fallback_model, prompt=prompt, schema=schema, temperature=temperature)
+        elif fallback_provider == "openai":
+            result = _openai_structured(model=fallback_model, prompt=prompt, schema=schema)
         else:
-            result = _google_structured(
-                model=fallback_model,
-                schema=schema,
-                contents=contents,
-                temperature=temperature,
-                grounded=False,
-            )
+            result = _google_structured(model=fallback_model, schema=schema, contents=contents, temperature=temperature, grounded=False)
 
     _cache_put(key, result)
     return result
-
-
-def _google_text(*, model: str, prompt: str, temperature: float, grounded: bool) -> str:
-    from google.genai import types
-
-    with _google_client() as client:
-        response = _provider_call(
-            "google",
-            model,
-            lambda: client.models.generate_content(
-                model=model,
-                contents=prompt,
-                config=_google_config(types=types, temperature=temperature, grounded=grounded),
-            ),
-        )
-    return response.text or ""
 
 
 def generate_text(*, task: str, prompt: str, temperature: float = 0.4, grounded: bool = False) -> str:
@@ -389,14 +451,22 @@ def generate_text(*, task: str, prompt: str, temperature: float = 0.4, grounded:
 
     try:
         if provider == "google":
-            result = _google_text(model=model, prompt=prompt, temperature=temperature, grounded=grounded)
+            from google.genai import types
+            with _google_client() as client:
+                response = _provider_call(
+                    "google",
+                    model,
+                    lambda: client.models.generate_content(
+                        model=model,
+                        contents=prompt,
+                        config=_google_config(types=types, temperature=temperature, grounded=grounded),
+                    ),
+                )
+            result = response.text or ""
         elif provider == "openai":
-            client = _openai_client()
-            try:
-                response = _provider_call("openai", model, lambda: client.responses.create(model=model, input=prompt))
-            finally:
-                client.close()
-            result = response.output_text or ""
+            result = _openai_text(model=model, prompt=prompt)
+        elif provider == "mistral":
+            result = _mistral_text(model=model, prompt=prompt, temperature=temperature)
         else:
             raise ValueError(f"Unsupported LLM provider: {provider}")
     except (LLMRateLimitError, LLMQuotaError) as primary_error:
@@ -404,15 +474,23 @@ def generate_text(*, task: str, prompt: str, temperature: float = 0.4, grounded:
         if not fallback:
             raise primary_error
         fallback_provider, fallback_model = fallback
-        if fallback_provider == "openai":
-            client = _openai_client()
-            try:
-                response = _provider_call("openai", fallback_model, lambda: client.responses.create(model=fallback_model, input=prompt))
-            finally:
-                client.close()
-            result = response.output_text or ""
+        if fallback_provider == "mistral":
+            result = _mistral_text(model=fallback_model, prompt=prompt, temperature=temperature)
+        elif fallback_provider == "openai":
+            result = _openai_text(model=fallback_model, prompt=prompt)
         else:
-            result = _google_text(model=fallback_model, prompt=prompt, temperature=temperature, grounded=False)
+            from google.genai import types
+            with _google_client() as client:
+                response = _provider_call(
+                    "google",
+                    fallback_model,
+                    lambda: client.models.generate_content(
+                        model=fallback_model,
+                        contents=prompt,
+                        config=_google_config(types=types, temperature=temperature, grounded=False),
+                    ),
+                )
+            result = response.text or ""
 
     _cache_put(key, result)
     return result

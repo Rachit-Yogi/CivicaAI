@@ -1,8 +1,4 @@
-"""Direct model adapters used by Civica's LangGraph workflows.
-
-Provider SDKs are used directly so Civica is not coupled to provider-specific
-LangChain integrations. LangGraph remains the orchestration layer.
-"""
+"""Direct model adapters used by Civica's LangGraph workflows."""
 from __future__ import annotations
 
 from typing import TypeVar
@@ -60,6 +56,7 @@ def generate_structured(
     image_bytes: bytes | None = None,
     image_mime_type: str | None = None,
     temperature: float = 0.2,
+    grounded: bool = False,
 ) -> T:
     provider, model = _model_config(task)
 
@@ -76,13 +73,18 @@ def generate_structured(
                 prompt,
             ]
 
+        config_kwargs = {
+            "temperature": temperature,
+            "response_mime_type": "application/json",
+            "response_schema": schema,
+        }
+        if grounded:
+            config_kwargs["tools"] = [types.Tool(google_search=types.GoogleSearch())]
+
         response = client.models.generate_content(
             model=model,
             contents=contents,
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json",
-                response_schema=schema,
-            ),
+            config=types.GenerateContentConfig(**config_kwargs),
         )
         return schema.model_validate_json(response.text)
 
@@ -113,6 +115,7 @@ def generate_text(
         response = client.models.generate_content(
             model=model,
             contents=prompt,
+            config={"temperature": temperature},
         )
         return response.text or ""
 

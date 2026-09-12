@@ -1,4 +1,4 @@
-"""Civica AI FastAPI service."""
+"""Civica AI FastAPI application: API + web UI in one service."""
 from __future__ import annotations
 
 import os
@@ -6,8 +6,11 @@ from pathlib import Path
 from typing import Annotated
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
 
 from ingestion import fetch_url_text, is_image, read_pdf, read_text, save_upload
@@ -18,22 +21,47 @@ from pipelines import chat_reply
 
 load_dotenv()
 
-app = FastAPI(title="Civica AI API", description="FastAPI gateway for Civica's LangChain-powered civic AI services.", version="2.0.0")
+BASE_DIR = Path(__file__).resolve().parent
+TEMPLATES_DIR = BASE_DIR / "templates"
+STATIC_DIR = BASE_DIR / "static"
 
-origins = [x.strip() for x in os.getenv("CIVICA_CORS_ORIGINS", "http://localhost:5000").split(",") if x.strip()]
-app.add_middleware(CORSMiddleware, allow_origins=origins, allow_credentials=True, allow_methods=["GET", "POST"], allow_headers=["*"])
+app = FastAPI(
+    title="Civica AI",
+    description="FastAPI application and API gateway for Civica's LangChain-powered civic AI services.",
+    version="3.0.0",
+)
+
+templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
+app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+origins = [
+    x.strip()
+    for x in os.getenv("CIVICA_CORS_ORIGINS", "*").split(",")
+    if x.strip()
+]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=origins != ["*"],
+    allow_methods=["GET", "POST"],
+    allow_headers=["*"],
+)
+
 
 class ApiResponse(BaseModel):
     success: bool = True
     data: dict
 
+
 class SchemeRequest(BaseModel):
     text: str | None = Field(default=None, max_length=200_000)
     url: str | None = None
 
+
 class ChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=20_000)
     history: list[dict[str, str]] = Field(default_factory=list, max_length=12)
+
 
 class HealthResponse(BaseModel):
     status: str
@@ -47,9 +75,51 @@ def _cleanup(path: str | None) -> None:
         except OSError:
             pass
 
+
+# ---------------------------------------------------------------------------
+# Web UI routes
+# ---------------------------------------------------------------------------
+
+@app.get("/", response_class=HTMLResponse, include_in_schema=False)
+@app.get("/index/", response_class=HTMLResponse, include_in_schema=False)
+def index_page(request: Request):
+    return templates.TemplateResponse(request=request, name="index.html")
+
+
+@app.get("/home/", response_class=HTMLResponse, include_in_schema=False)
+def home_page(request: Request):
+    return templates.TemplateResponse(request=request, name="home.html")
+
+
+@app.get("/scheme/", response_class=HTMLResponse, include_in_schema=False)
+def scheme_page(request: Request):
+    return templates.TemplateResponse(request=request, name="scheme.html")
+
+
+@app.get("/fraud/", response_class=HTMLResponse, include_in_schema=False)
+def fraud_page(request: Request):
+    return templates.TemplateResponse(request=request, name="fraud.html")
+
+
+@app.get("/mitra/", response_class=HTMLResponse, include_in_schema=False)
+def mitra_page(request: Request):
+    return templates.TemplateResponse(request=request, name="mitra.html")
+
+
+# ---------------------------------------------------------------------------
+# API routes
+# ---------------------------------------------------------------------------
+
 @app.get("/api/v1/health", response_model=HealthResponse, tags=["system"])
 def health() -> HealthResponse:
-    return HealthResponse(status="ok", models={task: model_info(task) for task in ("text", "multimodal", "chat", "reasoning")})
+    return HealthResponse(
+        status="ok",
+        models={
+            task: model_info(task)
+            for task in ("text", "multimodal", "chat", "reasoning")
+        },
+    )
+
 
 @app.post("/api/v1/schemes/analyze", response_model=ApiResponse, tags=["schemes"])
 def analyze_scheme(request: SchemeRequest) -> ApiResponse:
@@ -66,6 +136,7 @@ def analyze_scheme(request: SchemeRequest) -> ApiResponse:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+
 
 @app.post("/api/v1/schemes/analyze-file", response_model=ApiResponse, tags=["schemes"])
 async def analyze_scheme_file(file: UploadFile = File(...)) -> ApiResponse:
@@ -87,8 +158,12 @@ async def analyze_scheme_file(file: UploadFile = File(...)) -> ApiResponse:
     finally:
         _cleanup(temp_path)
 
+
 @app.post("/api/v1/fraud/analyze", response_model=ApiResponse, tags=["fraud"])
-async def analyze_fraud(text: Annotated[str | None, Form(max_length=20_000)] = None, image: UploadFile | None = File(default=None)) -> ApiResponse:
+async def analyze_fraud(
+    text: Annotated[str | None, Form(max_length=20_000)] = None,
+    image: UploadFile | None = File(default=None),
+) -> ApiResponse:
     if not text and image is None:
         raise HTTPException(status_code=400, detail="Provide text or an image.")
     temp_path = None
@@ -108,9 +183,16 @@ async def analyze_fraud(text: Annotated[str | None, Form(max_length=20_000)] = N
     finally:
         _cleanup(temp_path)
 
+
 @app.post("/api/v1/chat", response_model=dict, tags=["chat"])
 def chat(request: ChatRequest) -> dict:
     try:
         return {"success": True, "response": chat_reply(request.message, request.history)}
     except Exception as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    uvicorn.run("api:app", host="0.0.0.0", port=int(os.getenv("PORT", "8000")))

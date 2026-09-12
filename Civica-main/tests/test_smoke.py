@@ -1,4 +1,4 @@
-"""Smoke tests for CivicaAI's FastAPI backend and Flask frontend routes."""
+"""Smoke tests for CivicaAI's FastAPI application and web UI."""
 from __future__ import annotations
 
 import sys
@@ -53,6 +53,13 @@ def test_fastapi_health_and_openapi(fastapi_client):
     assert "/api/v1/chat" in paths
 
 
+def test_web_ui_routes(fastapi_client):
+    for route in ("/", "/index/", "/home/", "/scheme/", "/fraud/", "/mitra/"):
+        response = fastapi_client.get(route)
+        assert response.status_code == 200, route
+        assert response.headers["content-type"].startswith("text/html"), route
+
+
 def test_fastapi_validation_and_mocked_business_paths(fastapi_client):
     assert fastapi_client.post("/api/v1/schemes/analyze", json={}).status_code == 400
     assert fastapi_client.post(
@@ -62,26 +69,16 @@ def test_fastapi_validation_and_mocked_business_paths(fastapi_client):
     assert fastapi_client.post("/api/v1/chat", json={"message": "hello"}).status_code == 200
 
 
-def test_flask_frontend_routes():
-    try:
-        from app import app
-    except ImportError as exc:
-        pytest.skip(f"Flask/Google stack unavailable: {exc}")
+def test_frontend_contracts():
+    scheme = (ROOT / "templates" / "scheme.html").read_text(encoding="utf-8")
+    mitra = (ROOT / "templates" / "mitra.html").read_text(encoding="utf-8")
+    fraud = (ROOT / "templates" / "fraud.html").read_text(encoding="utf-8")
 
-    client = app.test_client()
-    expected = ["/", "/index/", "/home/", "/scheme/", "/fraud/", "/mitra/"]
-    for route in expected:
-        response = client.get(route)
-        assert response.status_code == 200, route
-        assert response.mimetype == "text/html", route
-
-
-def test_frontend_scheme_contract_matches_flask():
-    html = (ROOT / "templates" / "scheme.html").read_text(encoding="utf-8")
-    assert "fetch('/analyze'" in html
-    assert "data-type=\"file\"" in html
-    assert "data-type=\"url\"" in html
-    assert "data-type=\"text\"" in html
+    assert "/api/v1/schemes/analyze-file" in scheme
+    assert "/api/v1/schemes/analyze" in scheme
+    assert "/api/v1/chat" in mitra
+    assert "/api/v1/fraud/analyze" in fraud
+    assert "url_for(" not in fraud
 
 
 def test_frontend_templates_exist():

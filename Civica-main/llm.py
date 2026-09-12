@@ -1,4 +1,4 @@
-"""Direct model adapters used by Civica's LangGraph workflows."""
+"""Direct Google/OpenAI SDK adapters used by Civica's LangGraph workflows."""
 from __future__ import annotations
 
 from typing import TypeVar
@@ -44,57 +44,41 @@ def _model_config(task: str) -> tuple[str, str]:
         provider, model = "openai", settings.openai_reasoning_model
     else:
         provider, model = settings.text_provider, settings.text_model
-
     return provider, _normalize_model(provider, model)
 
 
-def generate_structured(
-    *,
-    task: str,
-    prompt: str,
-    schema: type[T],
-    image_bytes: bytes | None = None,
-    image_mime_type: str | None = None,
-    temperature: float = 0.2,
-    grounded: bool = False,
-) -> T:
+def _google_config(*, types, temperature: float, schema=None, grounded: bool = False):
+    kwargs = {"temperature": temperature}
+    if schema is not None:
+        kwargs.update({"response_mime_type": "application/json", "response_schema": schema})
+    if grounded:
+        kwargs["tools"] = [types.Tool(google_search=types.GoogleSearch())]
+    return types.GenerateContentConfig(**kwargs)
+
+
+def generate_structured(*, task: str, prompt: str, schema: type[T], image_bytes: bytes | None = None,
+                        image_mime_type: str | None = None, temperature: float = 0.2,
+                        grounded: bool = False) -> T:
     provider, model = _model_config(task)
 
     if provider == "google":
         from google.genai import types
 
-        client = _google_client()
         contents: list[object] = [prompt]
         if image_bytes is not None:
             if not image_mime_type:
                 raise ValueError("image_mime_type is required when image_bytes is supplied.")
-            contents = [
-                types.Part.from_bytes(data=image_bytes, mime_type=image_mime_type),
-                prompt,
-            ]
+            contents = [types.Part.from_bytes(data=image_bytes, mime_type=image_mime_type), prompt]
 
-        config_kwargs = {
-            "temperature": temperature,
-            "response_mime_type": "application/json",
-            "response_schema": schema,
-        }
-        if grounded:
-            config_kwargs["tools"] = [types.Tool(google_search=types.GoogleSearch())]
-
-        response = client.models.generate_content(
+        response = _google_client().models.generate_content(
             model=model,
             contents=contents,
-            config=types.GenerateContentConfig(**config_kwargs),
+            config=_google_config(types=types, temperature=temperature, schema=schema, grounded=grounded),
         )
         return schema.model_validate_json(response.text)
 
     if provider == "openai":
-        client = _openai_client()
-        response = client.responses.parse(
-            model=model,
-            input=prompt,
-            text_format=schema,
-        )
+        response = _openai_client().responses.parse(model=model, input=prompt, text_format=schema)
         if response.output_parsed is None:
             raise RuntimeError("OpenAI returned no structured output.")
         return response.output_parsed
@@ -102,29 +86,21 @@ def generate_structured(
     raise ValueError(f"Unsupported LLM provider: {provider}")
 
 
-def generate_text(
-    *,
-    task: str,
-    prompt: str,
-    temperature: float = 0.4,
-) -> str:
+def generate_text(*, task: str, prompt: str, temperature: float = 0.4, grounded: bool = False) -> str:
     provider, model = _model_config(task)
 
     if provider == "google":
-        client = _google_client()
-        response = client.models.generate_content(
+        from google.genai import types
+
+        response = _google_client().models.generate_content(
             model=model,
             contents=prompt,
-            config={"temperature": temperature},
+            config=_google_config(types=types, temperature=temperature, grounded=grounded),
         )
         return response.text or ""
 
     if provider == "openai":
-        client = _openai_client()
-        response = client.responses.create(
-            model=model,
-            input=prompt,
-        )
+        response = _openai_client().responses.create(model=model, input=prompt)
         return response.output_text or ""
 
     raise ValueError(f"Unsupported LLM provider: {provider}")

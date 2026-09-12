@@ -14,7 +14,7 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
 
 from ingestion import fetch_url_text, is_image, read_pdf, read_text, save_upload
-from llm import model_info
+from llm import LLMQuotaError, LLMRateLimitError, model_info
 from pipelines import analyze_fraud as run_fraud
 from pipelines import analyze_scheme as run_scheme
 from pipelines import chat_reply
@@ -78,6 +78,17 @@ def _cleanup(path: str | None) -> None:
             pass
 
 
+def _raise_llm_limit(exc: LLMRateLimitError) -> None:
+    status = 429
+    if isinstance(exc, LLMQuotaError):
+        detail = str(exc)
+        headers = {"Retry-After": "120"}
+    else:
+        detail = str(exc)
+        headers = {"Retry-After": "10"}
+    raise HTTPException(status_code=status, detail=detail, headers=headers) from exc
+
+
 # ---------------------------------------------------------------------------
 # Web UI routes
 # ---------------------------------------------------------------------------
@@ -136,6 +147,8 @@ def analyze_scheme(request: SchemeRequest) -> ApiResponse:
         else:
             data = run_scheme(text=request.text)
         return ApiResponse(data=data)
+    except (LLMQuotaError, LLMRateLimitError) as exc:
+        _raise_llm_limit(exc)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
@@ -155,6 +168,8 @@ async def analyze_scheme_file(file: UploadFile = File(...)) -> ApiResponse:
         else:
             data = run_scheme(text=read_text(temp_path))
         return ApiResponse(data=data)
+    except (LLMQuotaError, LLMRateLimitError) as exc:
+        _raise_llm_limit(exc)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
@@ -180,6 +195,8 @@ async def analyze_fraud(
         return ApiResponse(data=data)
     except HTTPException:
         raise
+    except (LLMQuotaError, LLMRateLimitError) as exc:
+        _raise_llm_limit(exc)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
@@ -192,6 +209,8 @@ async def analyze_fraud(
 def chat(request: ChatRequest) -> dict:
     try:
         return {"success": True, "response": chat_reply(request.message, request.history)}
+    except (LLMQuotaError, LLMRateLimitError) as exc:
+        _raise_llm_limit(exc)
     except Exception as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 

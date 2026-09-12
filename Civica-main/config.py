@@ -20,10 +20,12 @@ class Settings:
     text_model: str = os.getenv("CIVICA_TEXT_MODEL", "gemini-3.6-flash")
     multimodal_model: str = os.getenv("CIVICA_MULTIMODAL_MODEL", "gemini-3.6-flash")
     chat_model: str = os.getenv("CIVICA_CHAT_MODEL", "gemini-3.6-flash")
-    mistral_model: str = os.getenv("CIVICA_MISTRAL_MODEL", "mistral-large-latest")
+    # Free-tier friendly default. Override in Vercel with CIVICA_MISTRAL_MODEL if needed.
+    mistral_model: str = os.getenv("CIVICA_MISTRAL_MODEL", "mistral-small-latest")
     openai_reasoning_model: str = os.getenv("CIVICA_OPENAI_REASONING_MODEL", "o3")
     fallback_provider: str | None = os.getenv("CIVICA_FALLBACK_PROVIDER", "mistral")
-    fallback_model: str | None = os.getenv("CIVICA_FALLBACK_MODEL", "mistral-large-latest")
+    # Mistral's documented Free-mode quickstart uses mistral-small-latest.
+    fallback_model: str | None = os.getenv("CIVICA_FALLBACK_MODEL", "mistral-small-latest")
     max_upload_mb: int = int(os.getenv("CIVICA_MAX_UPLOAD_MB", "10"))
     request_timeout_seconds: int = int(os.getenv("CIVICA_REQUEST_TIMEOUT", "15"))
     llm_requests_per_minute: int = int(os.getenv("CIVICA_LLM_RPM", "8"))

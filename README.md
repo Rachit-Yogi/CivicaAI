@@ -2,56 +2,40 @@
 
 CIVICA AI is a **voice-first, multilingual AI platform** designed to make government services, digital tools, and everyday information **accessible to non-tech users in Bharat**.
 
-It enables users to interact using **voice, text, or images** and receive **simple, structured, and actionable responses** in their native language.
-
----
+It enables users to interact using **voice, text, or images** and receive **simple, structured, and actionable responses**.
 
 ## 🚀 Problem Statement
 
-Millions of people in India struggle with:
-- Complex government portals
-- Language barriers
-- Low digital literacy
-- Rising scams and misinformation
-
-**CIVICA AI solves this by simplifying access to information through voice-first AI.**
-
----
+Millions of people in India struggle with complex government portals, language barriers, low digital literacy, and rising scams and misinformation. CIVICA AI addresses these problems with a simple, multimodal civic assistant.
 
 ## 💡 Key Features
 
-- 🎤 **Voice-First Interaction**  
-  Speak naturally in your regional language
+- 🎤 Voice-first interaction (product direction)
+- 🏛 Government scheme guidance: eligibility, benefits, and application steps
+- 🛡 Fake news and scam detection for text and images
+- 📚 Digital literacy support through Mitra AI
+- 🌐 Multimodal input for civic workflows
 
-- 🏛 **Government Scheme Guidance**  
-  Eligibility, benefits, and step-by-step application help
+## 🏗 Architecture
 
-- 🛡 **Fake News & Scam Detection**  
-  Verify messages, images, and suspicious content
+```text
+Browser
+   │
+   ▼
+FastAPI (web UI + REST API)
+   │
+   ├── Scheme analysis
+   ├── Fraud / scam analysis
+   └── Mitra chat
+   │
+   ▼
+LangChain pipelines
+   │
+   ├── Gemini 2.5 Flash (text / multimodal / chat)
+   └── OpenAI reasoning model (configurable)
+```
 
-- 🥗 **Food & Nutrition Awareness**  
-  Analyze food labels and suggest healthier choices
-
-- 📚 **Digital Literacy Support**  
-  Learn UPI, online safety, and digital tools easily
-
-- 🌐 **Multimodal Input**  
-  Supports voice, text, and image-based queries
-
----
-
-## ⚙️ How It Works
-
-1. User speaks or uploads input (text/image)
-2. System processes:
-   - Speech → Text
-   - Image → OCR
-3. AI detects intent (scheme, scam, food, etc.)
-4. Retrieves real-time information
-5. Generates **structured step-by-step response**
-6. Responds via **voice in local language**
-
----
+FastAPI is the **single application server**. The legacy Flask application has been removed.
 
 ## 🛠 Tech Stack
 
@@ -61,66 +45,88 @@ Millions of people in India struggle with:
 - JavaScript
 
 ### Backend
-- Python (Flask)
+- Python 3
+- FastAPI
+- Uvicorn
+- Pydantic
 
-### AI & APIs
-- Gemini 2.5 Flash API
-- Prompt Engineering
+### AI
+- LangChain
+- Gemini 2.5 Flash
+- OpenAI (configurable reasoning route)
 
----
+### Document / Web Processing
+- pypdf
+- Pillow
+- BeautifulSoup4
+- requests
 
-## 🧠 Unique Selling Points
+## ▶️ Run Locally
 
-- Voice-first design for **non-tech users**
-- Focused on **India-specific problems**
-- Provides **actionable steps, not just answers**
-- Designed for **low-literacy and rural accessibility**
+From `Civica-main/`:
 
----
+```bash
+python -m venv .venv
+```
 
-## 📌 Use Cases
+Activate the environment and install dependencies:
 
-- Check eligibility for government schemes  
-- Detect fake WhatsApp messages or scams  
-- Analyze food products for nutrition  
-- Learn digital payments and online safety  
-- Get help with e-Mitra or government portals  
+```bash
+pip install -r ../requirements.txt
+```
 
----
+Create `.env` from `.env.example` and set `GOOGLE_API_KEY`.
 
-## 📷 Screenshots
+Start the application:
 
-> *(Add screenshots here)*
+```bash
+uvicorn api:app --reload --host 0.0.0.0 --port 8000
+```
 
----
+Open:
+- `http://127.0.0.1:8000/`
+- `http://127.0.0.1:8000/scheme/`
+- `http://127.0.0.1:8000/fraud/`
+- `http://127.0.0.1:8000/mitra/`
+- `http://127.0.0.1:8000/docs`
 
-## 🚧 Current Status
+## 🔌 API
 
-- ✅ Working Web Prototype  
-- 🔄 Mobile App (Android/iOS) – Planned  
-- 🔄 AWS-based scaling – Planned  
+| Method | Endpoint | Purpose |
+|---|---|---|
+| GET | `/api/v1/health` | Health + model configuration |
+| POST | `/api/v1/schemes/analyze` | Analyze text or a public URL |
+| POST | `/api/v1/schemes/analyze-file` | Analyze PDF, text, or image upload |
+| POST | `/api/v1/fraud/analyze` | Analyze suspicious text or image |
+| POST | `/api/v1/chat` | Mitra conversational assistant |
 
----
+## 🧪 Testing
+
+Run from the repository root:
+
+```bash
+pytest Civica-main/tests -q
+```
+
+The smoke suite covers API routing, validation, UI routes, template presence, and frontend-to-FastAPI endpoint contracts.
+
+## 📌 Current Status
+
+- ✅ FastAPI is the primary application server
+- ✅ Flask removed from runtime dependencies
+- ✅ LangChain model-routing layer integrated
+- ✅ Web UI migrated to `/api/v1/*` endpoints
+- 🔄 Voice, OCR, retrieval, and mobile clients remain extension areas
 
 ## 🎯 Vision
 
-To make technology **accessible, understandable, and useful** for every citizen of India — regardless of language or technical knowledge.
-
----
+Make technology accessible, understandable, and useful for every citizen of India — regardless of language or technical knowledge.
 
 ## 🤝 Contributing
 
-Contributions, ideas, and feedback are welcome!
-
----
+Contributions, ideas, and feedback are welcome.
 
 ## 📬 Contact
 
 **Rachit Yogi**  
-AI & Data Science Enthusiast  
-
----
-
-## ⭐ Show Your Support
-
-If you like this project, give it a ⭐ on GitHub!
+AI & Data Science Enthusiast

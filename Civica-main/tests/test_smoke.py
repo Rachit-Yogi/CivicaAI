@@ -60,6 +60,12 @@ def test_web_ui_routes(fastapi_client):
         assert response.headers["content-type"].startswith("text/html"), route
 
 
+def test_static_files_are_served(fastapi_client):
+    response = fastapi_client.get("/static/style.css")
+    assert response.status_code == 200
+    assert "text/css" in response.headers["content-type"]
+
+
 def test_fastapi_validation_and_mocked_business_paths(fastapi_client):
     assert fastapi_client.post("/api/v1/schemes/analyze", json={}).status_code == 400
     assert fastapi_client.post(
@@ -79,6 +85,13 @@ def test_frontend_contracts():
     assert "/api/v1/chat" in mitra
     assert "/api/v1/fraud/analyze" in fraud
     assert "url_for(" not in fraud
+    assert "/analyze" not in scheme.replace("/api/v1/schemes/analyze", "")
+
+
+def test_no_flask_dependency():
+    requirements = (ROOT.parent / "requirements.txt").read_text(encoding="utf-8")
+    assert "flask" not in requirements.lower()
+    assert "fastapi" in requirements.lower()
 
 
 def test_frontend_templates_exist():

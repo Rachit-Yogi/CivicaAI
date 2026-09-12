@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import random
 import threading
 import time
@@ -219,6 +218,7 @@ def _is_retryable(exc: Exception) -> bool:
     return code in {408, 409, 429, 500, 502, 503, 504} or any(
         marker in text
         for marker in (
+            "408",
             "429",
             "resource_exhausted",
             "rate limit",
@@ -228,6 +228,7 @@ def _is_retryable(exc: Exception) -> bool:
             "gateway timeout",
             "timeout",
             "connection reset",
+            "connection refused",
         )
     )
 
@@ -300,8 +301,10 @@ def _provider_call(provider: str, model: str, operation):
                     break
                 _backoff(attempt)
         assert last_exc is not None
-        if _error_code(last_exc) == 429 or "429" in _error_text(last_exc):
-            raise LLMRateLimitError("The AI provider is rate-limited right now. Please retry shortly.") from last_exc
+        if _is_retryable(last_exc):
+            raise LLMRateLimitError(
+                "The AI provider is temporarily unavailable or rate-limited."
+            ) from last_exc
         raise last_exc
     finally:
         _release_request_slot(semaphore)
@@ -406,6 +409,9 @@ def generate_structured(*, task: str, prompt: str, schema: type[T], image_bytes:
     if cached is not None:
         return cached  # type: ignore[return-value]
 
+    if image_bytes is not None and provider != "google":
+        raise ValueError(f"Provider '{provider}' does not support this workflow's multimodal request path.")
+
     contents: list[object] = [prompt]
     if image_bytes is not None:
         if not image_mime_type:
@@ -417,12 +423,8 @@ def generate_structured(*, task: str, prompt: str, schema: type[T], image_bytes:
         if provider == "google":
             result = _google_structured(model=model, schema=schema, contents=contents, temperature=temperature, grounded=grounded)
         elif provider == "openai":
-            if image_bytes:
-                raise ValueError("OpenAI structured multimodal requests are not supported by this workflow.")
             result = _openai_structured(model=model, prompt=prompt, schema=schema)
         elif provider == "mistral":
-            if image_bytes:
-                raise ValueError("Mistral structured multimodal requests are not enabled by this workflow.")
             result = _mistral_structured(model=model, prompt=prompt, schema=schema, temperature=temperature)
         else:
             raise ValueError(f"Unsupported LLM provider: {provider}")

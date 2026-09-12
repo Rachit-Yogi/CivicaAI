@@ -7,8 +7,7 @@ pillow
 requests==2.32.5
 beautifulsoup4==4.13.5
 pydantic==2.12.5
-langchain==1.0.8
-langchain-core==1.6.2
-langchain-google-genai==4.4.0
-langchain-openai==1.6.2
+langgraph==1.0.10
+google-genai==2.23.0
+openai==3.13.0
 pytest==8.4.2

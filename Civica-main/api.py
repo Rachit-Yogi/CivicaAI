@@ -8,7 +8,7 @@ from typing import Annotated
 from dotenv import load_dotenv
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
@@ -27,8 +27,8 @@ STATIC_DIR = BASE_DIR / "static"
 
 app = FastAPI(
     title="Civica AI",
-    description="FastAPI application and API gateway for Civica's LangChain-powered civic AI services.",
-    version="3.0.0",
+    description="FastAPI application and API gateway for Civica's civic AI services.",
+    version="4.0.0",
 )
 
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
@@ -62,6 +62,12 @@ class ChatRequest(BaseModel):
 class HealthResponse(BaseModel):
     status: str
     models: dict[str, dict[str, str]]
+
+
+FAVICON_SVG = """<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 64 64\">
+<rect width=\"64\" height=\"64\" rx=\"14\" fill=\"#0f766e\"/>
+<path d=\"M18 20h28v7H25v7h18v7H25v10h-7V20z\" fill=\"white\"/>
+</svg>"""
 
 
 def _cleanup(path: str | None) -> None:
@@ -100,6 +106,11 @@ def fraud_page(request: Request):
 @app.get("/mitra/", response_class=HTMLResponse, include_in_schema=False)
 def mitra_page(request: Request):
     return templates.TemplateResponse("mitra.html", {"request": request})
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+def favicon() -> Response:
+    return Response(content=FAVICON_SVG, media_type="image/svg+xml", headers={"Cache-Control": "public, max-age=86400"})
 
 
 # ---------------------------------------------------------------------------

@@ -34,11 +34,7 @@ app = FastAPI(
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
-origins = [
-    x.strip()
-    for x in os.getenv("CIVICA_CORS_ORIGINS", "*").split(",")
-    if x.strip()
-]
+origins = [x.strip() for x in os.getenv("CIVICA_CORS_ORIGINS", "http://localhost:8000").split(",") if x.strip()]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
@@ -83,27 +79,27 @@ def _cleanup(path: str | None) -> None:
 @app.get("/", response_class=HTMLResponse, include_in_schema=False)
 @app.get("/index/", response_class=HTMLResponse, include_in_schema=False)
 def index_page(request: Request):
-    return templates.TemplateResponse(request=request, name="index.html")
+    return templates.TemplateResponse("index.html", {"request": request})
 
 
 @app.get("/home/", response_class=HTMLResponse, include_in_schema=False)
 def home_page(request: Request):
-    return templates.TemplateResponse(request=request, name="home.html")
+    return templates.TemplateResponse("home.html", {"request": request})
 
 
 @app.get("/scheme/", response_class=HTMLResponse, include_in_schema=False)
 def scheme_page(request: Request):
-    return templates.TemplateResponse(request=request, name="scheme.html")
+    return templates.TemplateResponse("scheme.html", {"request": request})
 
 
 @app.get("/fraud/", response_class=HTMLResponse, include_in_schema=False)
 def fraud_page(request: Request):
-    return templates.TemplateResponse(request=request, name="fraud.html")
+    return templates.TemplateResponse("fraud.html", {"request": request})
 
 
 @app.get("/mitra/", response_class=HTMLResponse, include_in_schema=False)
 def mitra_page(request: Request):
-    return templates.TemplateResponse(request=request, name="mitra.html")
+    return templates.TemplateResponse("mitra.html", {"request": request})
 
 
 # ---------------------------------------------------------------------------
@@ -114,10 +110,7 @@ def mitra_page(request: Request):
 def health() -> HealthResponse:
     return HealthResponse(
         status="ok",
-        models={
-            task: model_info(task)
-            for task in ("text", "multimodal", "chat", "reasoning")
-        },
+        models={task: model_info(task) for task in ("text", "multimodal", "chat", "reasoning")},
     )
 
 
@@ -194,5 +187,4 @@ def chat(request: ChatRequest) -> dict:
 
 if __name__ == "__main__":
     import uvicorn
-
     uvicorn.run("api:app", host="0.0.0.0", port=int(os.getenv("PORT", "8000")))

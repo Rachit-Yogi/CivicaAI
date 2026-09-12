@@ -1,2 +1,22 @@
+[project]
+name = "civica-ai"
+version = "3.0.0"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "fastapi==0.117.1",
+    "uvicorn[standard]==0.36.0",
+    "python-multipart==0.0.20",
+    "pypdf",
+    "python-dotenv",
+    "pillow",
+    "requests==2.32.5",
+    "beautifulsoup4==4.13.5",
+    "pydantic==2.11.9",
+    "langchain==1.0.8",
+    "langchain-core==1.6.2",
+    "langchain-google-genai==4.4.0",
+    "langchain-openai==1.6.2",
+]
+
 [tool.vercel]
 entrypoint = "api:app"

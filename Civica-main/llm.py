@@ -17,8 +17,6 @@ _GOOGLE_LEGACY_MODEL_MAP = {
     "models/gemini-2.5-flash": "gemini-3.6-flash",
 }
 
-# Process-local protection. This reduces bursts inside a warm Vercel instance.
-# A shared Redis/Upstash limiter can be added later for cross-instance limits.
 _request_lock = threading.Lock()
 _request_times: dict[str, deque[float]] = {}
 _concurrency: dict[str, threading.BoundedSemaphore] = {}
@@ -43,14 +41,14 @@ def _google_client():
     if not settings.google_api_key:
         raise RuntimeError("GOOGLE_API_KEY is required for the configured Google model.")
 
-    # Let the official SDK handle transient 429/5xx retries, while our application
-    # layer adds burst protection and handles daily quota exhaustion separately.
+    # Application code owns retries, so the SDK performs one HTTP attempt per
+    # application attempt. This avoids multiplying retry traffic against quota.
     retry_options = types.HttpRetryOptions(
-        attempts=3,
+        attempts=1,
         initial_delay=1.0,
-        max_delay=8.0,
+        max_delay=1.0,
         exp_base=2.0,
-        jitter=1.0,
+        jitter=0.0,
         http_status_codes=[408, 429, 500, 502, 503, 504],
     )
     return genai.Client(
@@ -184,7 +182,6 @@ def _cache_put(key: str, value: object) -> None:
         return
     with _cache_lock:
         _response_cache[key] = (time.monotonic(), value)
-        # Keep memory bounded on long-lived local/dev processes.
         if len(_response_cache) > 256:
             oldest = min(_response_cache.items(), key=lambda item: item[1][0])[0]
             _response_cache.pop(oldest, None)
@@ -205,7 +202,16 @@ def _is_retryable(exc: Exception) -> bool:
 
 def _is_daily_quota(exc: Exception) -> bool:
     text = _error_text(exc)
-    return any(marker in text for marker in ("daily quota", "quota_exceeded", "quota has been exhausted", "exceeded your current quota"))
+    return any(
+        marker in text
+        for marker in (
+            "daily quota",
+            "quota_exceeded",
+            "quota has been exhausted",
+            "exceeded your current quota",
+            "quota will reset",
+        )
+    )
 
 
 def _circuit_key(provider: str, model: str) -> str:
@@ -227,7 +233,9 @@ def _check_circuit(provider: str, model: str) -> None:
 
 def _open_circuit(provider: str, model: str) -> None:
     with _circuit_lock:
-        _circuit_open_until[_circuit_key(provider, model)] = time.monotonic() + max(30, settings.llm_circuit_open_seconds)
+        _circuit_open_until[_circuit_key(provider, model)] = time.monotonic() + max(
+            30, settings.llm_circuit_open_seconds
+        )
 
 
 def _backoff(attempt: int) -> None:
@@ -235,7 +243,8 @@ def _backoff(attempt: int) -> None:
         settings.llm_backoff_max_seconds,
         settings.llm_backoff_initial_seconds * (2 ** attempt),
     )
-    time.sleep(max(0.05, base + random.uniform(0, min(1.0, base * 0.25))))
+    jitter = random.uniform(0, min(1.0, base * 0.25))
+    time.sleep(max(0.05, base + jitter))
 
 
 def _provider_call(provider: str, model: str, operation):
@@ -259,7 +268,7 @@ def _provider_call(provider: str, model: str, operation):
                     break
                 _backoff(attempt)
         assert last_exc is not None
-        if getattr(last_exc, "code", None) == 429:
+        if getattr(last_exc, "code", None) == 429 or "429" in _error_text(last_exc):
             raise LLMRateLimitError(
                 "The AI provider is rate-limited right now. Please retry shortly."
             ) from last_exc
@@ -268,7 +277,7 @@ def _provider_call(provider: str, model: str, operation):
         _release_request_slot(semaphore)
 
 
-def _google_structured(*, model: str, prompt: str, schema: type[T], contents: list[object], temperature: float, grounded: bool) -> T:
+def _google_structured(*, model: str, schema: type[T], contents: list[object], temperature: float, grounded: bool) -> T:
     from google.genai import types
 
     with _google_client() as client:
@@ -303,8 +312,11 @@ def generate_structured(*, task: str, prompt: str, schema: type[T], image_bytes:
     try:
         if provider == "google":
             result = _google_structured(
-                model=model, prompt=prompt, schema=schema, contents=contents,
-                temperature=temperature, grounded=grounded,
+                model=model,
+                schema=schema,
+                contents=contents,
+                temperature=temperature,
+                grounded=grounded,
             )
         elif provider == "openai":
             client = _openai_client()
@@ -330,7 +342,8 @@ def generate_structured(*, task: str, prompt: str, schema: type[T], image_bytes:
             client = _openai_client()
             try:
                 response = _provider_call(
-                    "openai", fallback_model,
+                    "openai",
+                    fallback_model,
                     lambda: client.responses.parse(model=fallback_model, input=prompt, text_format=schema),
                 )
             finally:
@@ -339,10 +352,12 @@ def generate_structured(*, task: str, prompt: str, schema: type[T], image_bytes:
                 raise primary_error
             result = response.output_parsed
         else:
-            from google.genai import types
             result = _google_structured(
-                model=fallback_model, prompt=prompt, schema=schema,
-                contents=contents, temperature=temperature, grounded=False,
+                model=fallback_model,
+                schema=schema,
+                contents=contents,
+                temperature=temperature,
+                grounded=False,
             )
 
     _cache_put(key, result)

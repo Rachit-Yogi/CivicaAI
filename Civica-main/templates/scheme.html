@@ -5,76 +5,46 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Scheme Guide AI</title>
   <style>
-    :root{--primary:#f47b20;--bg:#fff7ed;--text:#333;--muted:#666}
-    *{box-sizing:border-box;font-family:Inter,Arial,sans-serif} body{margin:0;min-height:100vh;background:linear-gradient(135deg,#fff,#fceed5);display:grid;place-items:center;padding:20px;color:var(--text)}
-    .card{width:min(820px,100%);background:#ffffffd9;border:1px solid #ffffffaa;border-radius:24px;padding:32px;box-shadow:0 12px 35px #1f26871a;backdrop-filter:blur(12px)}
-    h1{color:var(--primary);margin:0 0 8px;text-align:center}.subtitle{text-align:center;color:var(--muted);margin:0 0 24px}
-    .tabs{display:flex;gap:10px;margin-bottom:20px}.tab{flex:1;padding:12px;border:2px solid var(--primary);background:transparent;color:var(--primary);border-radius:12px;font-weight:700;cursor:pointer}.tab.active{background:#f47b2030}
-    .panel{display:none}.panel.active{display:block}.drop{border:2px dashed var(--primary);border-radius:16px;padding:36px;text-align:center;margin-bottom:18px}.drop input{margin-top:14px}.field{width:100%;padding:14px;border:2px solid #f47b204d;border-radius:12px;margin-bottom:18px;font-size:1rem}.btn{width:100%;padding:15px;border:0;border-radius:12px;background:var(--primary);color:#fff;font-weight:700;cursor:pointer}.btn:disabled{opacity:.65;cursor:not-allowed}.results{display:none;margin-top:22px;background:#fff;border-radius:16px;padding:22px;border:1px solid #f47b204d}.results.show{display:block}.results h2{margin-top:0;color:var(--primary)}.results h3{margin-bottom:4px}.results ul,.results ol{margin-top:6px;padding-left:20px}.results li{margin-bottom:8px}.sources a{color:#b84f00;word-break:break-word}.error{display:none;color:#b42318;background:#fee4e2;padding:12px;border-radius:10px;margin-top:16px}.error.show{display:block}
+    :root{--primary:#f47b20;--text:#333;--muted:#666}*{box-sizing:border-box;font-family:Inter,Arial,sans-serif}body{margin:0;min-height:100vh;background:linear-gradient(135deg,#fff,#fceed5);display:grid;place-items:center;padding:20px;color:var(--text)}.card{width:min(900px,100%);background:#ffffffd9;border:1px solid #ffffffaa;border-radius:24px;padding:32px;box-shadow:0 12px 35px #1f26871a;backdrop-filter:blur(12px)}h1{color:var(--primary);margin:0 0 8px;text-align:center}.subtitle{text-align:center;color:var(--muted);margin:0 0 24px}.tabs{display:flex;gap:10px;margin-bottom:20px}.tab{flex:1;padding:12px;border:2px solid var(--primary);background:transparent;color:var(--primary);border-radius:12px;font-weight:700;cursor:pointer}.tab.active{background:#f47b2030}.panel{display:none}.panel.active{display:block}.drop{border:2px dashed var(--primary);border-radius:16px;padding:36px;text-align:center;margin-bottom:18px}.drop input{margin-top:14px}.field{width:100%;padding:14px;border:2px solid #f47b204d;border-radius:12px;margin-bottom:18px;font-size:1rem}.btn{width:100%;padding:15px;border:0;border-radius:12px;background:var(--primary);color:#fff;font-weight:700;cursor:pointer}.btn:disabled{opacity:.65;cursor:not-allowed}.results{display:none;margin-top:22px;background:#fff;border-radius:16px;padding:24px;border:1px solid #f47b204d}.results.show{display:block}.results h2{margin-top:0;color:var(--primary)}.response{line-height:1.7;font-size:1rem}.response h1,.response h2,.response h3{color:var(--primary);margin-top:20px}.response ul,.response ol{padding-left:24px}.response a{color:#b84f00;word-break:break-word}.sources{margin-top:24px;padding-top:16px;border-top:1px solid #f47b204d}.sources a{color:#b84f00;word-break:break-word}.error{display:none;color:#b42318;background:#fee4e2;padding:12px;border-radius:10px;margin-top:16px}.error.show{display:block}
   </style>
 </head>
 <body>
   <main class="card">
     <h1>Scheme Guide AI</h1>
-    <p class="subtitle">Simplifying Indian Government Schemes for Everyone.</p>
+    <p class="subtitle">Research Indian government schemes, programs, funds and services.</p>
     <div class="tabs">
       <button class="tab active" data-mode="file">Upload File</button>
       <button class="tab" data-mode="url">Paste URL</button>
       <button class="tab" data-mode="text">Ask About a Scheme</button>
     </div>
-
-    <section id="file-panel" class="panel active">
-      <div class="drop"><strong>PDF, TXT, PNG, JPG or WebP</strong><br><input id="file-input" type="file" accept=".pdf,.txt,.png,.jpg,.jpeg,.webp"></div>
-    </section>
-    <section id="url-panel" class="panel"><input id="url-input" class="field" type="url" placeholder="https://example.gov.in/scheme"></section>
-    <section id="text-panel" class="panel"><textarea id="text-input" class="field" rows="7" placeholder="Example: PM CARES Fund — tell me what it is, who can benefit, and how it works."></textarea></section>
-
-    <button class="btn" id="analyze-btn">Analyze Scheme</button>
+    <section id="file-panel" class="panel active"><div class="drop"><strong>PDF, TXT, PNG, JPG or WebP</strong><br><input id="file-input" type="file" accept=".pdf,.txt,.png,.jpg,.jpeg,.webp"></div></section>
+    <section id="url-panel" class="panel"><input id="url-input" class="field" type="url" placeholder="https://official.gov.in/scheme"></section>
+    <section id="text-panel" class="panel"><textarea id="text-input" class="field" rows="7" placeholder="Try: PM CARES Fund — explain what it is, who it supports, how it works, and the latest official details."></textarea></section>
+    <button class="btn" id="analyze-btn">Research Scheme</button>
     <div id="error" class="error"></div>
     <section id="results" class="results">
-      <h2>Analysis Results</h2>
-      <h3>Summary</h3><p id="summary"></p>
-      <h3>Eligibility</h3><ul id="eligibility"></ul>
-      <h3>Benefits</h3><ul id="benefits"></ul>
-      <h3>Application / Access</h3><ol id="process"></ol>
-      <div id="documents-wrap"><h3>Documents / Information Needed</h3><ul id="documents_required"></ul></div>
-      <div id="notes-wrap"><h3>Important Notes</h3><ul id="important_notes"></ul></div>
-      <div id="sources-wrap"><h3>Official Sources</h3><ul id="sources" class="sources"></ul></div>
+      <h2>Grounded Answer</h2>
+      <div id="response" class="response"></div>
+      <div id="sources-wrap" class="sources"><h3>Sources</h3><ul id="sources"></ul></div>
     </section>
   </main>
-
 <script>
 document.addEventListener('DOMContentLoaded',()=>{
-  const tabs=[...document.querySelectorAll('.tab')];
-  const panels={file:document.getElementById('file-panel'),url:document.getElementById('url-panel'),text:document.getElementById('text-panel')};
-  const error=document.getElementById('error'); const results=document.getElementById('results'); const button=document.getElementById('analyze-btn');
-  tabs.forEach(tab=>tab.onclick=()=>{tabs.forEach(t=>t.classList.remove('active'));tab.classList.add('active');Object.values(panels).forEach(p=>p.classList.remove('active'));panels[tab.dataset.mode].classList.add('active');error.classList.remove('show');});
-  const list=(id,items)=>{const el=document.getElementById(id);el.innerHTML='';(items||[]).forEach(v=>{const li=document.createElement('li');li.textContent=v;el.appendChild(li)});};
-  const linkList=(id,items)=>{const el=document.getElementById(id);el.innerHTML='';(items||[]).forEach(v=>{const li=document.createElement('li');const a=document.createElement('a');a.href=v;a.target='_blank';a.rel='noopener noreferrer';a.textContent=v;li.appendChild(a);el.appendChild(li)});};
-  const showOptional=(wrapId,items)=>{document.getElementById(wrapId).style.display=(items||[]).length?'block':'none'};
+  const tabs=[...document.querySelectorAll('.tab')],panels={file:document.getElementById('file-panel'),url:document.getElementById('url-panel'),text:document.getElementById('text-panel')};
+  const error=document.getElementById('error'),results=document.getElementById('results'),button=document.getElementById('analyze-btn');
+  tabs.forEach(tab=>tab.onclick=()=>{tabs.forEach(t=>t.classList.remove('active'));tab.classList.add('active');Object.values(panels).forEach(p=>p.classList.remove('active'));panels[tab.dataset.mode].classList.add('active');error.classList.remove('show')});
+  const escapeHtml=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
+  const renderMarkdown=s=>{let x=escapeHtml(s);x=x.replace(/^### (.*)$/gm,'<h3>$1</h3>').replace(/^## (.*)$/gm,'<h2>$1</h2>').replace(/^# (.*)$/gm,'<h1>$1</h1>').replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>').replace(/^\s*[-*] (.*)$/gm,'<li>$1</li>').replace(/(<li>.*<\/li>)/gs,'<ul>$1</ul>').replace(/^(\d+)\. (.*)$/gm,'<li>$2</li>').replace(/\n\n/g,'<br><br>').replace(/\n/g,'<br>');return x};
+  const linkList=(items)=>{const el=document.getElementById('sources');el.innerHTML='';(items||[]).forEach(v=>{const li=document.createElement('li');const a=document.createElement('a');a.href=v;a.target='_blank';a.rel='noopener noreferrer';a.textContent=v;li.appendChild(a);el.appendChild(li)})};
   const showError=msg=>{error.textContent=msg;error.classList.add('show')};
-
   button.onclick=async()=>{
-    error.classList.remove('show'); results.classList.remove('show');
-    const mode=document.querySelector('.tab.active').dataset.mode; let response;
-    button.disabled=true; button.textContent='Researching...';
+    error.classList.remove('show');results.classList.remove('show');button.disabled=true;button.textContent='Researching...';
     try{
-      if(mode==='file'){
-        const file=document.getElementById('file-input').files[0]; if(!file) throw new Error('Please choose a file.');
-        const body=new FormData(); body.append('file',file);
-        response=await fetch('/api/v1/schemes/analyze-file',{method:'POST',body});
-      }else{
-        const payload=mode==='url'?{url:document.getElementById('url-input').value.trim()}:{text:document.getElementById('text-input').value.trim()};
-        if(!payload.url && !payload.text) throw new Error('Please provide a scheme name, question, URL, or file.');
-        response=await fetch('/api/v1/schemes/analyze',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
-      }
-      const json=await response.json(); if(!response.ok) throw new Error(json.detail||json.error||'Analysis failed.');
-      const data=json.data||{};
-      document.getElementById('summary').textContent=data.summary||'No summary returned.';
-      list('eligibility',data.eligibility); list('benefits',data.benefits); list('process',data.process); list('documents_required',data.documents_required); list('important_notes',data.important_notes); linkList('sources',data.sources);
-      showOptional('documents-wrap',data.documents_required); showOptional('notes-wrap',data.important_notes); showOptional('sources-wrap',data.sources);
-      results.classList.add('show');
-    }catch(e){showError(e.message||'Failed to connect to the server.');}finally{button.disabled=false;button.textContent='Analyze Scheme';}
+      const mode=document.querySelector('.tab.active').dataset.mode;let response;
+      if(mode==='file'){const file=document.getElementById('file-input').files[0];if(!file)throw new Error('Please choose a file.');const body=new FormData();body.append('file',file);response=await fetch('/api/v1/schemes/analyze-file',{method:'POST',body});}
+      else{const payload=mode==='url'?{url:document.getElementById('url-input').value.trim()}:{text:document.getElementById('text-input').value.trim()};if(!payload.url&&!payload.text)throw new Error('Please provide a scheme name, question, URL, or file.');response=await fetch('/api/v1/schemes/analyze',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});}
+      const json=await response.json();if(!response.ok)throw new Error(json.detail||json.error||'Research failed.');const data=json.data||{};document.getElementById('response').innerHTML=renderMarkdown(data.response||'No grounded answer returned.');linkList(data.sources);document.getElementById('sources-wrap').style.display=(data.sources||[]).length?'block':'none';results.classList.add('show');
+    }catch(e){showError(e.message||'Failed to connect to the server.')}finally{button.disabled=false;button.textContent='Research Scheme'}
   };
 });
 </script>

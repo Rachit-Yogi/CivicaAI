@@ -70,15 +70,23 @@ def generate_structured(*, task: str, prompt: str, schema: type[T], image_bytes:
                 raise ValueError("image_mime_type is required when image_bytes is supplied.")
             contents = [types.Part.from_bytes(data=image_bytes, mime_type=image_mime_type), prompt]
 
-        response = _google_client().models.generate_content(
-            model=model,
-            contents=contents,
-            config=_google_config(types=types, temperature=temperature, schema=schema, grounded=grounded),
-        )
+        # Keep a strong reference to the client for the full request lifetime.
+        # Chaining `_google_client().models.generate_content(...)` can let the
+        # temporary client be closed before httpx finishes sending the request.
+        with _google_client() as client:
+            response = client.models.generate_content(
+                model=model,
+                contents=contents,
+                config=_google_config(types=types, temperature=temperature, schema=schema, grounded=grounded),
+            )
         return schema.model_validate_json(response.text)
 
     if provider == "openai":
-        response = _openai_client().responses.parse(model=model, input=prompt, text_format=schema)
+        client = _openai_client()
+        try:
+            response = client.responses.parse(model=model, input=prompt, text_format=schema)
+        finally:
+            client.close()
         if response.output_parsed is None:
             raise RuntimeError("OpenAI returned no structured output.")
         return response.output_parsed
@@ -92,15 +100,23 @@ def generate_text(*, task: str, prompt: str, temperature: float = 0.4, grounded:
     if provider == "google":
         from google.genai import types
 
-        response = _google_client().models.generate_content(
-            model=model,
-            contents=prompt,
-            config=_google_config(types=types, temperature=temperature, grounded=grounded),
-        )
+        # Keep a strong reference to the client for the full request lifetime.
+        # Chaining `_google_client().models.generate_content(...)` can let the
+        # temporary client be closed before httpx finishes sending the request.
+        with _google_client() as client:
+            response = client.models.generate_content(
+                model=model,
+                contents=prompt,
+                config=_google_config(types=types, temperature=temperature, grounded=grounded),
+            )
         return response.text or ""
 
     if provider == "openai":
-        response = _openai_client().responses.create(model=model, input=prompt)
+        client = _openai_client()
+        try:
+            response = client.responses.create(model=model, input=prompt)
+        finally:
+            client.close()
         return response.output_text or ""
 
     raise ValueError(f"Unsupported LLM provider: {provider}")
